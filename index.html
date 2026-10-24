@@ -1,0 +1,569 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inside a Black Hole</title>
+
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    overflow: hidden;
+    background: #000;
+    color: white;
+    font-family: Arial, sans-serif;
+  }
+
+  canvas { display: block; }
+
+  #hud {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    padding: 22px;
+    text-shadow: 0 0 10px #63cfff;
+  }
+
+  #title {
+    font-size: 21px;
+    letter-spacing: 4px;
+    color: #bceeff;
+  }
+
+  #stats {
+    margin-top: 12px;
+    font-size: 12px;
+    line-height: 1.9;
+    color: #a5c5df;
+  }
+
+  #crosshair {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #ffffffaa;
+    font-size: 23px;
+  }
+
+  #help {
+    position: absolute;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: max-content;
+    max-width: 90%;
+    text-align: center;
+    font-size: 12px;
+    line-height: 2;
+    color: #c2d8ed;
+  }
+
+  #overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(ellipse, #071525bb, #000 80%);
+  }
+
+  #panel {
+    text-align: center;
+    max-width: 560px;
+    padding: 32px;
+  }
+
+  #panel h1 {
+    font-size: clamp(28px, 5vw, 48px);
+    letter-spacing: 5px;
+    font-weight: 300;
+    margin-bottom: 16px;
+    color: #e5f5ff;
+    text-shadow: 0 0 25px #0088ff;
+  }
+
+  #panel p {
+    color: #a9c3da;
+    line-height: 1.8;
+    margin-bottom: 24px;
+  }
+
+  button {
+    padding: 14px 28px;
+    border: 1px solid #74caff;
+    background: #0a2848;
+    color: white;
+    cursor: pointer;
+    letter-spacing: 2px;
+    font-size: 13px;
+  }
+
+  button:hover {
+    background: #154b77;
+    box-shadow: 0 0 25px #168bff77;
+  }
+
+  #notice {
+    margin-top: 15px;
+    font-size: 11px;
+    color: #728da8;
+  }
+
+  #exit {
+    position: fixed;
+    right: 20px;
+    top: 20px;
+    display: none;
+    pointer-events: auto;
+    z-index: 3;
+    padding: 9px 13px;
+    font-size: 11px;
+  }
+</style>
+</head>
+
+<body>
+
+<div id="overlay">
+  <div id="panel">
+    <h1>EVENT HORIZON</h1>
+    <p>
+      Enter a world where gravity bends light, stars curve
+      around darkness, and a supermassive black hole dominates
+      the sky. Explore the space around it in first person.
+    </p>
+    <button id="start">ENTER THE BLACK HOLE</button>
+    <div id="notice">
+      Best experienced fullscreen with a mouse and keyboard.
+      Three.js requires an internet connection.
+    </div>
+  </div>
+</div>
+
+<button id="exit">EXIT / PAUSE</button>
+
+<div id="hud">
+  <div id="title">EVENT HORIZON <span style="font-size:10px"> // EXPLORATION</span></div>
+  <div id="stats">
+    <div id="distance">DISTANCE: --</div>
+    <div id="velocity">VELOCITY: 0</div>
+    <div id="coordinates">POSITION: 0 / 0 / 0</div>
+    <div>ENVIRONMENT: DEEP SPACE</div>
+  </div>
+  <div id="crosshair">+</div>
+  <div id="help">
+    WASD — MOVE &nbsp; | &nbsp; MOUSE — LOOK AROUND<br>
+    SPACE — RISE &nbsp; | &nbsp; CTRL — DESCEND<br>
+    SHIFT — BOOST &nbsp; | &nbsp; ESC — RELEASE MOUSE
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from
+  'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js';
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x000005);
+scene.fog = new THREE.FogExp2(0x01020a, 0.0015);
+
+const camera = new THREE.PerspectiveCamera(
+  75, window.innerWidth / window.innerHeight, 0.1, 4000
+);
+camera.position.set(0, 5, 100);
+camera.rotation.order = 'YXZ';
+
+const renderer = new THREE.WebGLRenderer({
+  antialias: true,
+  powerPreference: 'high-performance'
+});
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.35;
+document.body.appendChild(renderer.domElement);
+
+// --------------------------------------------------
+// BLACK HOLE
+// --------------------------------------------------
+
+const hole = new THREE.Group();
+scene.add(hole);
+
+const blackHoleRadius = 13;
+
+const blackSphere = new THREE.Mesh(
+  new THREE.SphereGeometry(blackHoleRadius, 96, 64),
+  new THREE.MeshBasicMaterial({ color: 0x000000 })
+);
+hole.add(blackSphere);
+
+// Thin glowing boundary around the apparent shadow
+const horizon = new THREE.Mesh(
+  new THREE.TorusGeometry(13.15, 0.16, 12, 180),
+  new THREE.MeshBasicMaterial({
+    color: 0x75caff,
+    transparent: true,
+    opacity: 0.65
+  })
+);
+horizon.rotation.x = Math.PI / 2;
+hole.add(horizon);
+
+// --------------------------------------------------
+// ACCRETION DISK
+// --------------------------------------------------
+
+const disk = new THREE.Group();
+scene.add(disk);
+
+const diskMaterial = new THREE.ShaderMaterial({
+  transparent: true,
+  side: THREE.DoubleSide,
+  depthWrite: false,
+  uniforms: {
+    time: { value: 0 }
+  },
+  vertexShader: `
+    varying vec2 vUv;
+    varying vec3 vPos;
+    void main() {
+      vUv = uv;
+      vPos = position;
+      gl_Position = projectionMatrix *
+        modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    varying vec2 vUv;
+    varying vec3 vPos;
+    uniform float time;
+
+    void main() {
+      float r = length(vPos.xy);
+      float angle = atan(vPos.y, vPos.x);
+
+      float bands =
+        sin(r * 4.0 - angle * 5.0 - time * 2.0) *
+        0.5 + 0.5;
+
+      float turbulence =
+        sin(angle * 18.0 + r * 7.0 - time * 3.0) *
+        cos(r * 2.5 + time);
+
+      float inner = smoothstep(13.0, 17.0, r);
+      float outer = 1.0 - smoothstep(34.0, 48.0, r);
+      float alpha = inner * outer *
+        (0.25 + 0.48 * bands + 0.15 * turbulence);
+
+      vec3 hot = vec3(1.0, 0.88, 0.63);
+      vec3 orange = vec3(1.0, 0.25, 0.035);
+      vec3 blue = vec3(0.15, 0.48, 1.0);
+
+      float heat = 1.0 - smoothstep(14.0, 34.0, r);
+      vec3 color = mix(orange, hot, heat);
+      color = mix(color, blue, smoothstep(32.0, 44.0, r) * 0.6);
+
+      gl_FragColor = vec4(color, alpha);
+    }
+  `
+});
+
+const diskMesh = new THREE.Mesh(
+  new THREE.PlaneGeometry(100, 100, 1, 1),
+  diskMaterial
+);
+diskMesh.rotation.x = -Math.PI / 2;
+diskMesh.position.copy(hole.position);
+disk.add(diskMesh);
+
+// Additional rings create a hot, layered appearance.
+for (let i = 0; i < 9; i++) {
+  const radius = 15.5 + i * 2.1;
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(radius, 0.08 + (8-i)*0.025, 8, 240),
+    new THREE.MeshBasicMaterial({
+      color: i < 3 ? 0xffb15b : (i < 6 ? 0xff4b15 : 0x237dff),
+      transparent: true,
+      opacity: 0.15 + (8-i)*0.025,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    })
+  );
+  ring.rotation.x = Math.PI / 2;
+  disk.add(ring);
+}
+
+// --------------------------------------------------
+// GLOWING LIGHT AROUND THE BLACK HOLE
+// --------------------------------------------------
+
+function makeGlow(color, size, opacity) {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+
+  const gradient = ctx.createRadialGradient(64,64,0,64,64,64);
+  gradient.addColorStop(0, color);
+  gradient.addColorStop(0.15, color);
+  gradient.addColorStop(0.5, 'rgba(40,100,255,0.12)');
+  gradient.addColorStop(1, 'rgba(0,0,0,0)');
+
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0,0,128,128);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  const sprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      opacity,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    })
+  );
+  sprite.scale.set(size, size, 1);
+  return sprite;
+}
+
+const halo = makeGlow('rgba(75,160,255,0.9)', 85, 0.7);
+halo.position.copy(hole.position);
+scene.add(halo);
+
+const hotGlow = makeGlow('rgba(255,95,25,0.8)', 48, 0.45);
+hotGlow.position.copy(hole.position);
+scene.add(hotGlow);
+
+// --------------------------------------------------
+// STARFIELD
+// --------------------------------------------------
+
+const starCount = 7500;
+const starPositions = new Float32Array(starCount * 3);
+const starColors = new Float32Array(starCount * 3);
+
+for (let i = 0; i < starCount; i++) {
+  // Stars distributed throughout a large spherical volume.
+  const radius = 180 + Math.random() * 1600;
+  const theta = Math.random() * Math.PI * 2;
+  const z = Math.random() * 2 - 1;
+  const spread = Math.sqrt(1 - z*z);
+
+  starPositions[i*3] = radius * spread * Math.cos(theta);
+  starPositions[i*3+1] = radius * z;
+  starPositions[i*3+2] = radius * spread * Math.sin(theta);
+
+  const brightness = 0.4 + Math.random() * 0.6;
+  const tint = Math.random();
+
+  starColors[i*3] = brightness;
+  starColors[i*3+1] = brightness * (0.75 + tint*0.25);
+  starColors[i*3+2] = brightness * (0.75 + (1-tint)*0.25);
+}
+
+const starGeometry = new THREE.BufferGeometry();
+starGeometry.setAttribute(
+  'position', new THREE.BufferAttribute(starPositions, 3)
+);
+starGeometry.setAttribute(
+  'color', new THREE.BufferAttribute(starColors, 3)
+);
+
+const stars = new THREE.Points(
+  starGeometry,
+  new THREE.PointsMaterial({
+    size: 1.7,
+    vertexColors: true,
+    sizeAttenuation: true,
+    transparent: true,
+    opacity: 0.95
+  })
+);
+scene.add(stars);
+
+// --------------------------------------------------
+// DISTANT NEBULAE
+// --------------------------------------------------
+
+const nebulae = new THREE.Group();
+scene.add(nebulae);
+
+for (let i = 0; i < 24; i++) {
+  const sprite = makeGlow(
+    i % 2 ? 'rgba(50,60,255,0.55)' : 'rgba(180,35,120,0.5)',
+    50 + Math.random() * 130,
+    0.16
+  );
+
+  const direction = new THREE.Vector3(
+    Math.random()*2-1,
+    Math.random()*2-1,
+    Math.random()*2-1
+  ).normalize();
+
+  sprite.position.copy(direction.multiplyScalar(
+    350 + Math.random()*700
+  ));
+  nebulae.add(sprite);
+}
+
+// --------------------------------------------------
+// FIRST-PERSON CONTROLS
+// --------------------------------------------------
+
+let yaw = 0;
+let pitch = 0;
+let locked = false;
+
+const keys = {};
+const forward = new THREE.Vector3();
+const right = new THREE.Vector3();
+const up = new THREE.Vector3(0,1,0);
+const move = new THREE.Vector3();
+
+let velocity = 0;
+const clock = new THREE.Clock();
+
+const overlay = document.getElementById('overlay');
+const startButton = document.getElementById('start');
+const exitButton = document.getElementById('exit');
+
+startButton.addEventListener('click', () => {
+  renderer.domElement.requestPointerLock();
+});
+
+exitButton.addEventListener('click', () => {
+  document.exitPointerLock();
+});
+
+document.addEventListener('pointerlockchange', () => {
+  locked = document.pointerLockElement === renderer.domElement;
+  overlay.style.display = locked ? 'none' : 'flex';
+  exitButton.style.display = locked ? 'block' : 'none';
+});
+
+document.addEventListener('mousemove', (event) => {
+  if (!locked) return;
+
+  yaw -= event.movementX * 0.002;
+  pitch -= event.movementY * 0.002;
+  pitch = Math.max(-Math.PI/2 + 0.01,
+    Math.min(Math.PI/2 - 0.01, pitch));
+
+  camera.rotation.set(pitch, yaw, 0, 'YXZ');
+});
+
+document.addEventListener('keydown', (event) => {
+  keys[event.code] = true;
+
+  if ([
+    'Space', 'ControlLeft', 'ControlRight',
+    'ArrowUp', 'ArrowDown'
+  ].includes(event.code)) {
+    event.preventDefault();
+  }
+});
+
+document.addEventListener('keyup', (event) => {
+  keys[event.code] = false;
+});
+
+window.addEventListener('blur', () => {
+  for (const key in keys) keys[key] = false;
+});
+
+// --------------------------------------------------
+// ANIMATION AND MOVEMENT
+// --------------------------------------------------
+
+const distanceEl = document.getElementById('distance');
+const velocityEl = document.getElementById('velocity');
+const coordinatesEl = document.getElementById('coordinates');
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const time = clock.elapsedTime;
+
+  // Animate the disk's layered glow.
+  diskMaterial.uniforms.time.value = time;
+  disk.rotation.y = Math.sin(time * 0.07) * 0.05;
+
+  for (let i = 1; i < disk.children.length; i++) {
+    disk.children[i].rotation.z = time * (0.035 + i*0.002);
+  }
+
+  halo.material.rotation = time * 0.025;
+  hotGlow.material.rotation = -time * 0.04;
+  stars.rotation.y = time * 0.001;
+  nebulae.rotation.y = time * 0.002;
+
+  // Move in the direction the camera is facing.
+  camera.getWorldDirection(forward);
+  right.crossVectors(forward, up).normalize();
+
+  move.set(0, 0, 0);
+
+  if (keys.KeyW || keys.ArrowUp) move.add(forward);
+  if (keys.KeyS || keys.ArrowDown) move.sub(forward);
+  if (keys.KeyD) move.add(right);
+  if (keys.KeyA) move.sub(right);
+  if (keys.Space) move.y += 1;
+  if (keys.ControlLeft || keys.ControlRight) move.y -= 1;
+
+  if (move.lengthSq() > 0) move.normalize();
+
+  const speed = keys.ShiftLeft || keys.ShiftRight ? 115 : 38;
+
+  camera.position.addScaledVector(move, speed * dt);
+
+  // Softly pull the player toward the black hole.
+  // This is an artistic gameplay effect, not a GR solver.
+  const toHole = hole.position.clone().sub(camera.position);
+  const distance = toHole.length();
+
+  if (distance > 14 && distance < 230) {
+    const pull = (1 - distance / 230) * 3.5;
+    camera.position.addScaledVector(
+      toHole.normalize(), pull * dt
+    );
+  }
+
+  // Keep the camera outside the opaque central sphere.
+  const fromHole = camera.position.clone().sub(hole.position);
+  if (fromHole.length() < 14.5) {
+    camera.position.copy(
+      hole.position.clone().add(fromHole.normalize().multiplyScalar(14.5))
+    );
+  }
+
+  velocity = move.length() * speed;
+
+  distanceEl.textContent =
+    'DISTANCE: ' + distance.toFixed(1) + ' UNITS';
+  velocityEl.textContent =
+    'VELOCITY: ' + velocity.toFixed(1);
+  coordinatesEl.textContent =
+    'POSITION: ' +
+    camera.position.x.toFixed(0) + ' / ' +
+    camera.position.y.toFixed(0) + ' / ' +
+    camera.position.z.toFixed(0);
+
+  renderer.render(scene, camera);
+}
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+});
+
+animate();
+</script>
+</body>
+</html>
